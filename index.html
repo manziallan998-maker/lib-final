@@ -271,8 +271,6 @@ table { border-collapse: collapse; width: 100%; }
 .info-row label { color: var(--ink-muted); font-weight: 500; }
 .info-row .val { font-weight: 700; }
 
-/* ─── BULK IMPORT ─── */
-
 /* ─── CONNECTION STATUS ─── */
 .conn-banner { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: var(--r-sm); margin-bottom: 16px; font-size: .81rem; font-weight: 500; }
 .conn-banner.ok { background: var(--emerald-light); color: var(--emerald); border: 1px solid rgba(22,101,52,.2); }
@@ -588,6 +586,46 @@ table { border-collapse: collapse; width: 100%; }
         <button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="DB.testConn()">🔍 Test Connection</button>
       </div>
     </div>
+
+    <!-- ═══ DATA MANAGEMENT CARD (new) ═══ -->
+    <div class="settings-card" style="grid-column:1/-1">
+      <div class="sc-head">🗄️ Data Management</div>
+      <div class="sc-body" style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+
+        <!-- Backup -->
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:.82rem;color:var(--ink-muted);margin-bottom:12px;line-height:1.7">
+            <strong style="color:var(--ink);display:block;margin-bottom:3px">⬇️ Backup</strong>
+            Download a complete JSON backup of all books, students, issues and activity logs from the database.
+          </div>
+          <button class="btn btn-teal" onclick="Settings.downloadBackup()">⬇️ Download Backup</button>
+        </div>
+
+        <!-- Restore -->
+        <div style="flex:1;min-width:200px;border-left:1px solid var(--border);padding-left:20px">
+          <div style="font-size:.82rem;color:var(--ink-muted);margin-bottom:12px;line-height:1.7">
+            <strong style="color:var(--ink);display:block;margin-bottom:3px">⬆️ Restore</strong>
+            Upload a previously downloaded backup file to restore all data back into the database.
+          </div>
+          <label class="btn btn-emerald" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
+            ⬆️ Restore Backup
+            <input type="file" id="restoreFileInput" accept=".json" style="display:none" onchange="Settings.restoreBackup(this)">
+          </label>
+        </div>
+
+        <!-- Reset -->
+        <div style="flex:1;min-width:200px;border-left:1px solid var(--border);padding-left:20px">
+          <div style="font-size:.82rem;color:var(--ink-muted);margin-bottom:12px;line-height:1.7">
+            <strong style="color:var(--crimson);display:block;margin-bottom:3px">🔴 Reset System</strong>
+            Permanently delete ALL books, students, issue records and activity logs. This action cannot be undone.
+          </div>
+          <button class="btn btn-danger" onclick="Settings.openResetModal()">🔴 Reset System</button>
+        </div>
+
+      </div>
+    </div>
+    <!-- ═══ END DATA MANAGEMENT CARD ═══ -->
+
   </div>
 </section>
 
@@ -719,7 +757,36 @@ table { border-collapse: collapse; width: 100%; }
   </div>
 </div>
 
-<!-- Column Override Modal -->
+<!-- ═══ RESET SYSTEM MODAL (new) ═══ -->
+<div class="modal-overlay" id="resetModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-head">
+      <h3 class="modal-title">🔴 Reset System</h3>
+      <button class="modal-x" onclick="Settings.closeResetModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:var(--crimson-light);border:1px solid rgba(190,18,60,.2);border-radius:var(--r-sm);padding:13px 15px;margin-bottom:16px">
+        <div style="font-weight:700;color:var(--crimson);margin-bottom:6px">⚠️ This will permanently delete:</div>
+        <div style="font-size:.82rem;color:var(--crimson);line-height:1.9">
+          • All book records<br>
+          • All student records<br>
+          • All issue &amp; return history<br>
+          • All activity logs
+        </div>
+      </div>
+      <div class="fg" id="resetPwFg">
+        <label>Enter Admin Password to confirm <span>*</span></label>
+        <input class="fi" type="password" id="resetPwInput" placeholder="Enter your admin password" autocomplete="off">
+        <span class="ferr">Incorrect password — reset cancelled.</span>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="Settings.closeResetModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="Settings.confirmReset()">🔴 Reset Everything</button>
+    </div>
+  </div>
+</div>
+<!-- ═══ END RESET MODAL ═══ -->
 
 <script>
 /* ═══════════════════════════════════════════════════
@@ -827,7 +894,6 @@ const DB = {
 
   /* ── ISSUES ── */
   async getIssues(filters = {}) {
-    // Query book_issues with NO join syntax — do manual join in JS
     let q = _sb.from('book_issues').select('*');
 
     const today = U.today();
@@ -842,7 +908,6 @@ const DB = {
     if (error) throw error;
     if (!issues || !issues.length) return [];
 
-    // Collect unique IDs and fetch related records in two parallel calls
     const bookIds    = [...new Set(issues.map(i => i.book_id))];
     const studentIds = [...new Set(issues.map(i => i.student_id))];
 
@@ -864,7 +929,6 @@ const DB = {
   },
 
   async addIssue(issue) {
-    // Insert and then re-fetch with manual join
     const { data, error } = await _sb.from('book_issues').insert([issue]).select().single();
     if (error) throw error;
 
@@ -885,7 +949,7 @@ const DB = {
     return data;
   },
 
-  /* ── ACTIVITY (localStorage only — just UI convenience) ── */
+  /* ── ACTIVITY (localStorage only) ── */
   getActivity() {
     try { return JSON.parse(localStorage.getItem('lib_activity')) || []; } catch { return []; }
   },
@@ -1047,7 +1111,6 @@ const Dashboard = {
       if (overdue.length) { badge.style.display = ''; badge.textContent = overdue.length; }
       else badge.style.display = 'none';
 
-      // Recent issues (last 6)
       const recent = issues.slice(0, 6);
       const tbody = document.getElementById('recentIssuesTbody');
       if (!recent.length) {
@@ -1070,7 +1133,6 @@ const Dashboard = {
         }).join('');
       }
 
-      // Activity
       const logs = DB.getActivity();
       const feed = document.getElementById('activityFeed');
       if (!logs.length) {
@@ -1107,10 +1169,8 @@ const Books = {
 
     try {
       let books = await DB.getBooks({ search: q, grade: gradeF, category: catF });
-      // Also get all issues to compute available
       const issues = await DB.getIssues({ status: 'active' });
 
-      // Annotate available copies
       books = books.map(b => {
         const issued = issues.filter(i => i.book_id === b.book_id).length;
         return { ...b, _available: Math.max(0, (b.tot || 0) - issued) };
@@ -1118,7 +1178,6 @@ const Books = {
 
       this._cache = books;
 
-      // Populate filter dropdowns
       const grades = [...new Set(books.map(b => b.grade).filter(Boolean))].sort();
       const cats = [...new Set(books.map(b => b.book_category).filter(Boolean))].sort();
       const gEl = document.getElementById('bookGradeFilter');
@@ -1256,7 +1315,6 @@ const Students = {
         this._issueCounts[sid] = (this._issueCounts[sid] || 0) + 1;
       });
 
-      // Populate class filter
       const classes = [...new Set(students.map(s => s.class).filter(Boolean))].sort();
       const cEl = document.getElementById('studentClassFilter');
       if (cEl) { const pv = cEl.value; cEl.innerHTML = '<option value="">All Classes</option>' + classes.map(c => `<option value="${c}" ${c===pv?'selected':''}>${c}</option>`).join(''); }
@@ -1363,7 +1421,6 @@ const Issues = {
     try {
       let issues = await DB.getIssues({ status: filter === 'all' ? undefined : filter });
 
-      // Client-side search — includes book_code
       if (q) {
         issues = issues.filter(i => [
           i.student?.student_name || '',
@@ -1427,7 +1484,6 @@ const Issues = {
       document.getElementById('issueStudent').innerHTML = '<option value="">— Select Student —</option>' +
         students.map(s => `<option value="${s.student_id}">${U.esc(s.student_name)} — ${U.esc(s.class)}</option>`).join('');
 
-      // Compute available copies per book
       const issuedCounts = {};
       activeIssues.forEach(i => { issuedCounts[i.book_id] = (issuedCounts[i.book_id] || 0) + 1; });
 
@@ -1438,7 +1494,6 @@ const Issues = {
           return `<option value="${b.book_id}">${U.esc(b.subject)} — ${U.esc(b.grade)} — ${U.esc(b.book_category)} (${avail} avail)</option>`;
         }).join('');
 
-      // Reset book code field
       document.getElementById('issueBookCode').value = '';
 
       const today = U.today();
@@ -1635,11 +1690,13 @@ const Settings = {
       document.getElementById('sysConn').textContent = '❌ Error';
     }
   },
+
   saveLoan() {
     const v = parseInt(document.getElementById('settingLoanDays').value) || 14;
     localStorage.setItem('lib_loan_days', v);
     Toast.show(`Loan period set to ${v} days`, 'success');
   },
+
   changePw() {
     const curr = document.getElementById('currPw').value;
     const nw = document.getElementById('newPw').value;
@@ -1651,6 +1708,169 @@ const Settings = {
     localStorage.setItem('lib_pw', nw);
     ['currPw','newPw','confPw'].forEach(id => document.getElementById(id).value = '');
     Toast.show('Password changed!', 'success');
+  },
+
+  /* ══════════════════════════════════════
+     BACKUP — download full JSON snapshot
+  ══════════════════════════════════════ */
+  async downloadBackup() {
+    try {
+      Toast.show('Preparing backup…', 'info');
+      const [books, students, issues] = await Promise.all([
+        DB.getBooks(), DB.getStudents(), DB.getIssues()
+      ]);
+      const backup = {
+        version: '1.0',
+        exported_at: new Date().toISOString(),
+        school: 'G.S APAPEC MURAMBI',
+        books,
+        students,
+        // Strip joined fields — keep only raw issue columns
+        issues: issues.map(i => ({
+          issue_id:    i.issue_id,
+          student_id:  i.student_id,
+          book_id:     i.book_id,
+          book_code:   i.book_code,
+          issue_date:  i.issue_date,
+          return_date: i.return_date,
+          returned:    i.returned
+        })),
+        activity: DB.getActivity()
+      };
+      const json = JSON.stringify(backup, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'apapec_lib_backup_' + U.today() + '.json';
+      a.click();
+      DB.addActivity('add', '⬇️ System backup downloaded');
+      Toast.show('Backup downloaded successfully!', 'success');
+    } catch(e) {
+      Toast.show('Backup failed: ' + e.message, 'error');
+    }
+  },
+
+  /* ══════════════════════════════════════
+     RESTORE — upload and re-insert backup
+  ══════════════════════════════════════ */
+  async restoreBackup(input) {
+    const file = input.files[0];
+    if (!file) return;
+    input.value = ''; // reset file picker
+
+    Confirm.show(
+      'Restore Backup',
+      'Records from the backup file will be inserted into the database. Existing records are NOT deleted first — you may get duplicates if data already exists. Continue?',
+      async () => {
+        try {
+          Toast.show('Reading backup file…', 'info');
+          const text = await file.text();
+          let backup;
+          try { backup = JSON.parse(text); } catch { Toast.show('Invalid JSON file.', 'error'); return; }
+
+          if (!backup.books || !backup.students || !backup.issues) {
+            Toast.show('Invalid backup file — missing required sections.', 'error'); return;
+          }
+
+          let booksOk = 0, studentsOk = 0, issuesOk = 0;
+
+          for (const b of backup.books) {
+            try {
+              const { book_id, _available, ...rest } = b;
+              await _sb.from('books').insert([rest]);
+              booksOk++;
+            } catch {}
+          }
+
+          for (const s of backup.students) {
+            try {
+              const { student_id, ...rest } = s;
+              await _sb.from('students').insert([rest]);
+              studentsOk++;
+            } catch {}
+          }
+
+          for (const i of backup.issues) {
+            try {
+              const { issue_id, book, student, ...rest } = i;
+              await _sb.from('book_issues').insert([rest]);
+              issuesOk++;
+            } catch {}
+          }
+
+          if (backup.activity && Array.isArray(backup.activity)) {
+            localStorage.setItem('lib_activity', JSON.stringify(backup.activity));
+          }
+
+          DB.addActivity('add', '⬆️ Backup restored — ' + booksOk + ' books, ' + studentsOk + ' students, ' + issuesOk + ' issues');
+          Toast.show('Restore complete! Books: ' + booksOk + ', Students: ' + studentsOk + ', Issues: ' + issuesOk, 'success');
+          Settings.render();
+          Dashboard.render();
+        } catch(e) {
+          Toast.show('Restore failed: ' + e.message, 'error');
+        }
+      },
+      'Restore', 'btn-emerald', '⬆️'
+    );
+  },
+
+  /* ══════════════════════════════════════
+     RESET — password-gated full wipe
+  ══════════════════════════════════════ */
+  openResetModal() {
+    document.getElementById('resetPwInput').value = '';
+    document.getElementById('resetPwFg').classList.remove('has-error');
+    openModal('resetModal');
+  },
+
+  closeResetModal() {
+    document.getElementById('resetPwInput').value = '';
+    document.getElementById('resetPwFg').classList.remove('has-error');
+    closeModal('resetModal');
+  },
+
+  async confirmReset() {
+    const entered = document.getElementById('resetPwInput').value;
+    const stored  = localStorage.getItem('lib_pw') || 'admin123';
+    const fg      = document.getElementById('resetPwFg');
+
+    if (entered !== stored) {
+      fg.classList.add('has-error');
+      Toast.show('Incorrect password — reset cancelled.', 'error');
+      return;
+    }
+
+    // Password correct — close modal and proceed
+    fg.classList.remove('has-error');
+    closeModal('resetModal');
+    document.getElementById('resetPwInput').value = '';
+
+    try {
+      Toast.show('Resetting system… please wait.', 'warning');
+
+      // Delete all rows from every table (gte(0) matches all positive integer PKs)
+      const [r1, r2, r3] = await Promise.all([
+        _sb.from('book_issues').delete().gte('issue_id', 0),
+        _sb.from('students').delete().gte('student_id', 0),
+        _sb.from('books').delete().gte('book_id', 0),
+      ]);
+
+      if (r1.error) throw r1.error;
+      if (r2.error) throw r2.error;
+      if (r3.error) throw r3.error;
+
+      // Clear activity log from localStorage
+      localStorage.removeItem('lib_activity');
+
+      // Add a single reset marker to activity
+      DB.addActivity('delete', '🔴 System fully reset by administrator');
+
+      Toast.show('System reset complete. All data has been erased.', 'success');
+      Settings.render();
+      Dashboard.render();
+    } catch(e) {
+      Toast.show('Reset failed: ' + e.message, 'error');
+    }
   }
 };
 
